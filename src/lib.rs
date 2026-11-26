@@ -46,7 +46,9 @@ pub struct AuditReport {
 impl AuditReport {
     /// True if any critical findings exist.
     pub fn has_critical(&self) -> bool {
-        self.findings.iter().any(|f| f.severity == Severity::Critical)
+        self.findings
+            .iter()
+            .any(|f| f.severity == Severity::Critical)
     }
 
     /// Count by severity.
@@ -100,9 +102,7 @@ pub fn scan(root: &Path) -> Result<AuditReport, AuditError> {
             }
             // Private key files readable by group/other.
             let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
-            if PRIVATE_KEY_NAMES.iter().any(|p| name.contains(p))
-                && mode & 0o077 != 0
-            {
+            if PRIVATE_KEY_NAMES.iter().any(|p| name.contains(p)) && mode & 0o077 != 0 {
                 report.findings.push(Finding {
                     severity: Severity::Critical,
                     category: "permissions".into(),
@@ -158,7 +158,10 @@ pub fn render_text(report: &AuditReport) -> String {
     for f in &report.findings {
         out.push_str(&format!(
             "[{:?}] {} — {}: {}\n",
-            f.severity, f.category, f.path.display(), f.message
+            f.severity,
+            f.category,
+            f.path.display(),
+            f.message
         ));
     }
     out
