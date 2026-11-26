@@ -166,3 +166,99 @@ pub fn render_text(report: &AuditReport) -> String {
     }
     out
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+    use std::os::unix::fs::PermissionsExt;
+
+    fn fixture() -> tempfile::TempDir {
+        tempfile::tempdir().unwrap()
+    }
+
+    #[test]
+    fn world_writable_flagged() {
+        let dir = fixture();
+        let f = dir.path().join("pub.txt");
+        fs::write(&f, "data").unwrap();
+        fs::set_permissions(&f, fs::Permissions::from_mode(0o666)).unwrap();
+        let report = scan(dir.path()).unwrap();
+        assert_eq!(report.scanned_files, 1);
+        assert!(report
+            .findings
+            .iter()
+            .any(|f| f.category == "permissions" && f.severity == Severity::Warning));
+        assert!(!report.has_critical());
+    }
+
+    #[test]
+    fn loose_private_key_is_critical() {
+        let dir = fixture();
+        let key = dir.path().join("id_rsa");
+        fs::write(&key, "fake key").unwrap();
+        fs::set_permissions(&key, fs::Permissions::from_mode(0o644)).unwrap();
+        let report = scan(dir.path()).unwrap();
+        assert!(report.has_critical());
+        // Tighten perms -> no critical finding.
+        fs::set_permissions(&key, fs::Permissions::from_mode(0o600)).unwrap();
+        let report = scan(dir.path()).unwrap();
+        assert!(!report.has_critical());
+    }
+
+    #[test]
+    fn hardcoded_secret_flagged_once() {
+        let dir = fixture();
+        fs::write(
+            dir.path().join("config.env"),
+            "api_key = abc123\npassword = hunter2\n",
+        )
+        .unwrap();
+        let report = scan(dir.path()).unwrap();
+        let secrets: Vec<_> = report
+            .findings
+            .iter()
+            .filter(|f| f.category == "secrets")
+            .collect();
+        assert_eq!(secrets.len(), 1);
+        assert_eq!(secrets[0].severity, Severity::Warning);
+    }
+
+    #[test]
+    fn setuid_bit_is_info() {
+        let dir = fixture();
+        let f = dir.path().join("helper");
+        fs::write(&f, "bin").unwrap();
+        fs::set_permissions(&f, fs::Permissions::from_mode(0o4755)).unwrap();
+        let report = scan(dir.path()).unwrap();
+        assert!(report
+            .findings
+            .iter()
+            .any(|f| f.severity == Severity::Info && f.message.contains("setuid")));
+    }
+
+    #[test]
+    fn clean_tree_has_no_findings() {
+        let dir = fixture();
+        fs::write(dir.path().join("ok.txt"), "hello\n").unwrap();
+        fs::create_dir(dir.path().join("sub")).unwrap();
+        fs::write(dir.path().join("sub/ok2.txt"), "world\n").unwrap();
+        let report = scan(dir.path()).unwrap();
+        assert_eq!(report.scanned_files, 2);
+        assert!(report.findings.is_empty());
+        assert_eq!(report.count(Severity::Critical), 0);
+    }
+
+    #[test]
+    fn render_text_summarizes() {
+        let dir = fixture();
+        let f = dir.path().join("w.txt");
+        fs::write(&f, "x").unwrap();
+        fs::set_permissions(&f, fs::Permissions::from_mode(0o666)).unwrap();
+        let report = scan(dir.path()).unwrap();
+        let text = render_text(&report);
+        assert!(text.contains("Scanned 1 files"));
+        assert!(text.contains("1 findings"));
+        assert!(text.contains("Warning"));
+    }
+}
