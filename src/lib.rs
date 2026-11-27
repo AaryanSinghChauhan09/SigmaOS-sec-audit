@@ -261,4 +261,29 @@ mod tests {
         assert!(text.contains("1 findings"));
         assert!(text.contains("Warning"));
     }
+
+    #[test]
+    fn test_no_findings_severity_count_is_zero_aaa() {
+        // Arrange: clean directory
+        let dir = fixture();
+        fs::write(dir.path().join("clean.txt"), "data").unwrap();
+        // Act
+        let report = scan(dir.path()).unwrap();
+        // Assert
+        assert_eq!(report.count(Severity::Critical), 0);
+        assert_eq!(report.count(Severity::Warning), 0);
+    }
+
+    #[test]
+    fn test_scanned_files_count_matches_actual_aaa() {
+        // Arrange
+        let dir = fixture();
+        for i in 0..5u32 {
+            fs::write(dir.path().join(format!("file{i}.txt")), "ok").unwrap();
+        }
+        // Act
+        let report = scan(dir.path()).unwrap();
+        // Assert
+        assert_eq!(report.scanned_files, 5);
+    }
 }
